@@ -100,6 +100,7 @@
      (cond ((string= #\< token) "&lt;")
 	   ((string= #\> token) "&gt;")
 	   ((string= #\& token) "&amp;")
+	   ((string= #\~ token) "~~")
 	   (t token)))))
 
 (defun jack-identifier (token)
