@@ -8,4 +8,5 @@
   :serial t
   :depends-on (#:uiop #:split-sequence)
   :components ((:file "package")
-               (:file "compiler")))
+               (:file "tokenizer")
+	       (:file "parser")))
