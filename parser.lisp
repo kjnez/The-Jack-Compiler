@@ -34,42 +34,43 @@
     (if (string= #\} (first token-list))
 	(nconc parsed-list (list "<symbol> } </symbol>"))
 	(error "The last token of a class should be }."))
-    (setf parsed-list (append parsed-list (list "</class>")))))
+    (append parsed-list (list "</class>"))))
 
 (defun compile-class-var-dec (token-list parsed-list)
   "Structure: ('static' | 'field') type varName (',' varName)* ';'"
-  (nconc parsed-list (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
-  (if (is-type (second token-list))
-      (if (eql 'identifier (token-type (second token-list)))
-	  (nconc parsed-list (list (concatenate 'string
+  (let ((appendent '()))
+    (setf appendent (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
+    (if (is-type (second token-list))
+	(if (eql 'identifier (token-type (second token-list)))
+	    (nconc appendent (list (concatenate 'string
 						"<identifier> "
 						(second token-list)
 						" </identifier>")))
-	  (nconc parsed-list (list (concatenate 'string
+	    (nconc appendent (list (concatenate 'string
 						"<keyword> "
 						(second token-list)
 						" </keyword>"))))
-      (error "The second token of a classVarDec should be a keyword."))
-  
-  (if (eql 'identifier (token-type (third token-list)))
-      (nconc parsed-list (list (concatenate 'string
+	(error "The second token of a classVarDec should be a keyword."))
+    
+    (if (eql 'identifier (token-type (third token-list)))
+	(nconc appendent (list (concatenate 'string
 					    "<identifier> "
 					    (third token-list)
 					    " </identifier>")))
-      (error "The third token of a classVarDec should be an identifier."))
-  (setf token-list (cdddr token-list))
-  (loop while (and (string= "," (first token-list))
-		   (eql 'identifier (token-type (second token-list))))
-	do
-	   (nconc parsed-list (list "<symbol> , </symbol>"
-				    (concatenate 'string "<identifier> "
-						 (second token-list)
-						 " </identifier>")))
-	   (setf token-list (cddr token-list)))
-  (if (string= ";" (first token-list))
-      (nconc parsed-list '("<symbol> ; </symbol>"))
-      (error "The last token of a classVarDec should be ';'."))
-  (values (rest token-list) parsed-list))
+	(error "The third token of a classVarDec should be an identifier."))
+    (let ((rest-tokens (cdddr token-list)))
+     (loop while (and (string= "," (first rest-tokens))
+		      (eql 'identifier (token-type (second rest-tokens))))
+	   do
+	      (nconc appendent (list "<symbol> , </symbol>"
+				     (concatenate 'string "<identifier> "
+						  (second rest-tokens)
+						  " </identifier>")))
+	      (setf rest-tokens (cddr rest-tokens)))
+      (if (string= ";" (first rest-tokens))
+	  (nconc appendent '("<symbol> ; </symbol>"))
+	  (error "The last token of a classVarDec should be ';'."))
+      (values (rest rest-tokens) (append parsed-list appendent)))))
 
 (defun is-type (token)
   "Check if the token is a type."
@@ -78,59 +79,190 @@
 
 (defun compile-subroutine (token-list parsed-list)
   "Structure: ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody"
-  (nconc parsed-list (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
-  (if (or (string= "void" (second token-list)) (is-type (second token-list)))
-      (if (eql 'identifier (token-type (second token-list)))
-	  (nconc parsed-list (list (concatenate 'string
+  (let ((appendent '()))
+    (setf appendent (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
+    (if (or (string= "void" (second token-list)) (is-type (second token-list)))
+	(if (eql 'identifier (token-type (second token-list)))
+	    (nconc appendent (list (concatenate 'string
 						"<identifier> "
 						(second token-list)
 						" </identifier>")))
-	  (nconc parsed-list (list (concatenate 'string
+	    (nconc appendent (list (concatenate 'string
 						"<keyword> "
 						(second token-list)
 						" </keyword>"))))
-      (error "The second token of subroutineDec should be type or 'void'."))
-  (if (eql 'identifier (token-type (third token-list)))
-      (nconc parsed-list (list (concatenate 'string
+	(error "The second token of subroutineDec should be type or 'void'."))
+    (if (eql 'identifier (token-type (third token-list)))
+	(nconc appendent (list (concatenate 'string
 					    "<identifier> "
 					    (third token-list)
 					    " </identifier>")))
-      (error "The third token of subroutineDec should be an identifier."))
-  (setf token-list (cdddr token-list))
-  (if (string= "(" (first token-list))
-      (nconc parsed-list '("<symbol> ( </symbol>"))
-      (error "Missing a '(' before parameterList."))
-  (setf token-list (rest token-list))
-  (when (is-type (first token-list))
-      (multiple-value-bind (new-token-list new-parsed-list)
-	  (compile-parameter-list token-list parsed-list)
-	(setf token-list new-token-list)
-	(setf parsed-list new-parsed-list)))
-  (if (string= ")" (first token-list))
-      (nconc parsed-list '("<symbol> ) </symbol>"))
-      (error "Missing a ')' after parameterList."))
-  (if (string= "{" (second token-list))
-      (nconc parsed-list '("<symbol> { </symbol>"))
-      (error "Missing a '{' before subroutineBody."))
-  (setf token-list (cddr token-list))
-  ;; varDec
-  (loop while (string= "var" (first token-list))
-	do (multiple-value-bind (new-token-list new-parsed-list)
-	       (compile-var-dec token-list parsed-list)
-	     (setf token-list new-token-list)
-	     (setf parsed-list new-parsed-list)))
-  ;; statements
-  (loop while (member (first token-list) '("let" "if" "while" "do" "return") :test 'string=)
-	do (multiple-value-bind (new-token-list new-parsed-list)
-	       (compile-statements token-list parsed-list)
-	     (setf token-list new-token-list)
-	     (setf parsed-list new-parsed-list)))
-  (if (string= "}" (first token-list))
-      (nconc parsed-list '("<symbol> } </symbol>"))
-      (error "The end of a subroutineBody should be '}'.")))
+	(error "The third token of subroutineDec should be an identifier."))
+    (let ((rest-tokens (cdddr token-list)))
+     (if (string= "(" (first rest-tokens))
+	 (nconc appendent '("<symbol> ( </symbol>"))
+	 (error "Missing a '(' before parameterList."))
+      (setf rest-tokens (rest rest-tokens))
+      (when (is-type (first rest-tokens))
+	(multiple-value-bind (new-rest-tokens new-appendent)
+	    (compile-parameter-list rest-tokens appendent)
+	  (setf rest-tokens new-rest-tokens)
+	  (setf appendent new-appendent)))
+      (if (string= ")" (first rest-tokens))
+	  (nconc appendent '("<symbol> ) </symbol>"))
+	  (error "Missing a ')' after parameterList."))
+      (if (string= "{" (second rest-tokens))
+	  (nconc appendent '("<symbol> { </symbol>"))
+	  (error "Missing a '{' before subroutineBody."))
+      (setf rest-tokens (cddr rest-tokens))
+      ;; varDec
+      (loop while (string= "var" (first rest-tokens))
+	    do (multiple-value-bind (new-rest-tokens new-appendent)
+		   (compile-var-dec rest-tokens appendent)
+		 (setf rest-tokens new-rest-tokens)
+		 (setf appendent new-appendent)))
+      ;; statements
+      (loop while (member (first rest-tokens) '("let" "if" "while" "do" "return") :test 'string=)
+	    do (multiple-value-bind (new-rest-tokens new-appendent)
+		   (compile-statements rest-tokens appendent)
+		 (setf rest-tokens new-rest-tokens)
+		 (setf appendent new-appendent)))
+      (if (string= "}" (first rest-tokens))
+	  (nconc appendent '("<symbol> } </symbol>"))
+	  (error "The end of a subroutineBody should be '}'."))
+      (values (rest rest-tokens) (append parsed-list appendent)))))
 
-(defun compile-parameter-list (token-list parsed-list))
+(defun compile-parameter-list (token-list parsed-list)
+  "Structure: ((type varName) (',' type varName)*)?"
+  (let ((appendent '()))
+    (if (eql 'identifier (token-type (second token-list)))
+	(if (eql 'identifier (token-type (first token-list)))
+	    (setf appendent
+		  (append (list (concatenate 'string "<keyword> "
+					     (first token-list)
+					     " </keyword>"))
+			  (list (concatenate 'string "<identifier> "
+					     (second token-list)
+					     " </identifier>"))))
+	    (setf appendent
+		  (append (list (concatenate 'string "<identifier> "
+					     (first token-list)
+					     " </identifier>"))
+			  (list (concatenate 'string "<identifier> "
+					     (second token-list)
+					     " </identifier>")))))
+	(error "The second element of a parameterList should be an identifier."))
+    (if (not (string= #\, (third token-list)))
+	(values (cddr token-list) (append parsed-list appendent))
+	(progn
+	  (compile-parameter-list
+	   (cdddr token-list)
+	   (append parsed-list
+		   appendent
+		   (list (concatenate 'string "<symbol> , </symbol>"))))))))
 
-(defun compile-var-dec (token-list parsed-list))
+(defun compile-var-dec (token-list parsed-list)
+  "Structure: 'var' type varName (',' varName)* ';'"
+  (let ((appendent (list "<keyword> var </keyword>")))
+    (assert (eql 'keyword (token-type (first token-list))))
+    (if (is-type (second token-list))
+	(cond ((eql 'keyword (token-type (second token-list)))
+	       (nconc appendent (list (concatenate 'string
+						   "<keyword> "
+						   (second token-list)
+						   " </keyword>"))))
+	      ((eql 'identifier (token-type (second token-list)))
+	       (nconc appendent (list (concatenate 'string
+						   "<identifier> "
+						   (second token-list)
+						   " </identifier>"))))
+	      (t (error "Type in varDec should be keyword or identifier.")))
+	(error "Second element of varDec should be type."))
+    (if (eql 'identifier (token-type (third token-list)))
+	(nconc appendent (list (concatenate 'string
+					    "<identifier> "
+					    (third token-list)
+					    " </identifier>")))
+	(error "Third element of varDec should be an identifier."))
+    (let ((rest-tokens (cdddr token-list)))
+      (loop while (string= #\, (first rest-tokens))
+	    do (nconc appendent (list "<symbol> , </symbol>"))
+	       (if (eql 'identifier (token-type (second rest-tokens)))
+		   (nconc appendent (list (concatenate 'string
+						       "<identifier> "
+						       (second rest-tokens)
+						       " </identifier>")))
+		   (error "varName should be an identifier."))
+	       (setf rest-tokens (cddr rest-tokens)))
+      (if (string= #\; (first rest-tokens))
+	  (values (cdr rest-tokens) (append parsed-list appendent (list "<symbol> ; </symbol>")))
+	  (error "Last element of varDec should be ;.")))))
 
-(defun compile-statements (token-list parsed-list))
+(defun compile-statement (token-list parsed-list)
+  "Structure: (let | if | while | do | return)*"
+  (let ((first-element (first token-list)))
+    (cond ((string= "let" first-element)
+	   (compile-let token-list parsed-list))
+	  ((string= "if" first-element)
+	   (compile-if token-list parsed-list))
+	  ((string= "while" first-element)
+	   (compile-while token-list parsed-list))
+	  ((string= "do" first-element)
+	   (compile-do token-list parsed-list))
+	  ((string= "return" first-element)
+	   (compile-return token-list parsed-list))
+	  (t (error "Statement not recognized.")))))
+
+(defun compile-let (token-list parsed-list)
+  "Structure: 'let' varName ('[' expression ']')? '=' expression ';'"
+  (let ((appendent (list "<keyword> let </keyword>")))
+    (if (eql 'identifier (token-type (second token-list)))
+	(nconc appendent (list (concatenate 'string
+					    "<identifier> "
+					    (second token-list)
+					    " </identifier>")))
+	(error "varName should be an identifier."))
+    (let ((rest-tokens (cddr token-list)))
+      (when (string= #\[ (first rest-tokens))
+	(nconc appendent (list "<symbol> [ </symbol>"))
+	(multiple-value-bind (new-token-list new-appendent)
+	    (compile-expression (rest rest-tokens) appendent)
+	  (setf rest-tokens new-token-list)
+	  (setf appendent new-appendent))
+	(assert (string= #\] (first rest-tokens)))
+	(nconc appendent (list "<symbol> ] </symbol>"))
+	(setf rest-tokens (rest rest-tokens)))
+      (assert (string= #\= (first rest-tokens)))
+      (nconc appendent '("<symbol> = </symbol>"))
+      (multiple-value-bind (new-token-list new-appendent)
+	  (compile-expression (rest rest-tokens) appendent)
+	(setf rest-tokens new-token-list)
+	(setf appendent new-appendent))
+      (assert (string= #\; (first rest-tokens)))
+      (values (rest rest-tokens)
+	      (append parsed-list appendent '("<symbol> ; </symbol>"))))))
+
+(defun compile-do (token-list parsed-list)
+  "Structure: 'do' subroutineCall ';'"
+  (let ((appendent (list "<keyword> do </keyword>")))
+    (multiple-value-bind (new-token-list new-appendent)
+	(compile-subroutine-call (rest token-list) appendent)
+      (assert (string= #\; (first new-token-list)))
+      (values (rest new-token-list) (append parsed-list new-appendent
+					    '("<symbol> ; </symbol>"))))))
+
+(defun compile-while (token-list parsed-list)
+  "Structure: 'while' '(' expression ')' '{' statements '}'")
+
+(defun compile-return (token-list parsed-list))
+
+(defun compile-if (token-list parsed-list))
+
+(defun compile-expression (token-list parsed-list))
+
+(defun compile-subroutine-call (token-list parsed-list))
+
+
+;; Unit tests
+(defun compile-var-dec-test ()
+  (compile-var-dec (list "var" "int" "bar" "," "foo" ";") '()))
