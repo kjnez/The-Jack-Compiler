@@ -143,4 +143,5 @@
 (jack-analyzer "~/nand2tetris/projects/10/ArrayTest")
 (jack-analyzer "~/nand2tetris/projects/10/Square")
 
-(print (tokenizer "~/nand2tetris/projects/10/ArrayTest/Main.jack"))
+;; (print (tokenizer "~/nand2tetris/projects/10/ArrayTest/Main.jack"))
+
