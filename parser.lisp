@@ -364,7 +364,53 @@
 		      (list "</expression>")))
       (error "For now, we assume an expression is an identifier.")))
 
-(defun compile-subroutine-call (token-list &optional (parsed-list '())))
+(defun compile-subroutine-call (token-list &optional (parsed-list '()))
+  "Structure: subroutineName '(' expressionList ')' | (className | varName) '.' subroutineName '(' expressionList ')'"
+  (let ((appendent (list "<subroutineCall>"))
+	(rest-tokens token-list))
+    (assert (eql 'identifier (token-type (first rest-tokens))))
+    (nconc appendent (list (concatenate 'string "<identifier> " (first rest-tokens) " </identifier")))
+    (cond ((string= #\( (second rest-tokens)) ; subroutineName ( expressionList )
+	   (nconc appendent (list "<symbol> ( </symbol>"))
+	   (multiple-value-bind (new-rest-tokens new-appendent)
+	       (compile-expression-list (cddr rest-tokens) appendent)
+	     (setf rest-tokens new-rest-tokens)
+	     (setf appendent new-appendent))
+	   (assert (string= #\) (first rest-tokens)))
+	   (setf appendent (append appendent (list "<symbol> ) </symbol>"))))
+	  ((string= #\. (second rest-tokens))
+	   (nconc appendent (list "<symbol> . </symbol>"))
+	   (assert (eql 'identifier (token-type (third rest-tokens))))
+	   (nconc appendent (list (concatenate 'string "<identifier> " (third rest-tokens) " </identifier>")))
+	   (assert (string= #\( (fourth rest-tokens)))
+	   (nconc appendent (list "<symbol> ( </symbol>"))
+	   (multiple-value-bind (new-rest-tokens new-appendent)
+	       (compile-expression-list (nthcdr 4 rest-tokens) appendent)
+	     (setf rest-tokens new-rest-tokens)
+	     (setf appendent new-appendent))
+	   (assert (string= #\) (first rest-tokens)))
+	   (setf appendent (append appendent (list "<symbol> ) </symbol>"))))
+	  (t (error "SubroutineCall syntax error.")))
+    (values (cdr rest-tokens) (append parsed-list appendent (list "</subroutineCall>")))))
+
+(defun compile-expression-list (token-list &optional (parsed-list '()))
+  "Structure: (expression (',' expression)*)?"
+  ;; for now assume expression is an identifer
+  (unless (eql 'identifier (token-type (first token-list)))
+    (return-from compile-expression-list (values token-list parsed-list)))
+  (let ((appendent (list "<expressionList>"))
+	(rest-tokens token-list))
+    (multiple-value-bind (new-rest-tokens new-appendent)
+	(compile-expression rest-tokens appendent)
+      (setf rest-tokens new-rest-tokens)
+      (setf appendent new-appendent))
+    (loop while (string= #\, (first rest-tokens))
+	  do (nconc appendent (list "<symbol> , </symbol>"))
+	     (multiple-value-bind (new-rest-tokens new-appendent)
+		 (compile-expression (rest rest-tokens) appendent)
+	       (setf rest-tokens new-rest-tokens)
+	       (setf appendent new-appendent)))
+    (values rest-tokens appendent)))
 
 
 ;; Unit tests
@@ -385,6 +431,13 @@
 
 (defun compile-if-test ()
   (compile-if (list "if" "(" "foo" ")" "{" "return" "zoo" ";" "}" "else" "{" "let" "foo" "=" "bar" ";" "}")))
+
+(defun compile-expression-list-test ()
+  (compile-expression-list (list "kos" "," "nko" "," "oii")))
+
+(defun compile-subroutine-call-test ()
+  ;; (compile-subroutine-call '("did" "(" ")"))
+  (compile-subroutine-call '("did" "(" "expr" ")")))
 
 (defun run-unit-tests ()
   (multiple-value-bind (t-list p-list)
