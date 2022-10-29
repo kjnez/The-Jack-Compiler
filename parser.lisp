@@ -127,15 +127,6 @@
 		 (setf rest-tokens new-rest-tokens)
 		 (setf appendent new-appendent)
 		 (nconc appendent '("</varDec>"))))
-      ;; statements
-      ;; (loop while (member (first rest-tokens) '("let" "if" "while" "do" "return") :test 'string=)
-      ;; 	    initially (nconc appendent '("<statements>"))
-      ;; 	    do (multiple-value-bind (new-rest-tokens new-appendent)
-      ;; 		   (compile-statements rest-tokens appendent)
-      ;; 		 (setf rest-tokens new-rest-tokens)
-      ;; 		 (setf appendent new-appendent))
-      ;; 	    finally (nconc appendent '("</statements>")))
-      ;; modularized statements
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-statements rest-tokens appendent)
 	(setf rest-tokens new-rest-tokens)
@@ -378,7 +369,6 @@
 	(setf appendent new-appendent))
       (assert (string= #\) (first rest-tokens)))
       (nconc appendent (list "<symbol> ) </symbol>")))
-    (print appendent)
     (assert (string= #\. (second rest-tokens)))
     (nconc appendent (list "<symbol> . </symbol>"))
     (assert (eql 'identifier (token-type (third rest-tokens))))
@@ -439,6 +429,9 @@
   ;; (compile-subroutine-call '("did" "(" ")"))
   (compile-subroutine-call '("did" "(" "expr" ")" "." "expr2" "(" ")")))
 
+(defun compile-do-test ()
+  (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
+
 (defun run-unit-tests ()
   (multiple-value-bind (t-list p-list)
       (compile-var-dec-test)
@@ -449,3 +442,10 @@
   (multiple-value-bind (t-list p-list)
       (compile-let-test)
     (print p-list)))
+
+
+(print (tokenizer "/home/j/nand2tetris/projects/10/ExpressionLessSquare/Main.jack"))
+
+(step (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Main.jack")))
+
+

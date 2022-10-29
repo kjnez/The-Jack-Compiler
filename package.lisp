@@ -1,4 +1,5 @@
 ;;;; package.lisp
 
 (defpackage #:compiler
-  (:use #:cl))
+  (:use #:cl)
+  (:export :tokenizer))
