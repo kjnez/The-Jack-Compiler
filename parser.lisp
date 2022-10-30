@@ -75,6 +75,10 @@
   (or (member token (list "int" "char" "boolean") :test 'string=)
       (eql 'identifier (token-type token))))
 
+(defun is-keyword-type (token)
+  "Check if the token is ('int' | 'char' | boolean')."
+  (member token (list "int" "char" "boolean") :test 'string=))
+
 (defun compile-subroutine (token-list &optional (parsed-list '()))
   "Structure: ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody"
   (let ((appendent (list "<subroutineDec>")))
@@ -132,8 +136,8 @@
 (defun compile-parameter-list (token-list &optional (parsed-list '()))
   "Structure: ((type varName) (',' type varName)*)?"
   (let ((appendent (list "<parameterList>")))
-    (loop while (eql 'identifier (token-type (second token-list)))
-	  do (if (eql 'identifier (token-type (first token-list)))
+    (loop while (is-type (first token-list))
+	  do (if (is-keyword-type (first token-list))
 		 (nconc appendent
 			(list (concatenate 'string "<keyword> "
 					   (first token-list)
@@ -144,8 +148,8 @@
 		 (nconc appendent
 			(list (concatenate 'string "<identifier> "
 					   (first token-list)
-					   " </identifier>"))
-			(list (concatenate 'string "<identifier> "
+					   " </identifier>")
+			      (concatenate 'string "<identifier> "
 					   (second token-list)
 					   " </identifier>"))))
 	     (cond ((string= #\, (third token-list))
@@ -153,7 +157,9 @@
 		    (setf token-list (cdddr token-list)))
 		   ((string= #\) (third token-list))
 		    (setf token-list (cddr token-list)))
-		   (t (error "There's an error in the parameterList."))))
+		   (t
+		    (print appendent)
+		    (error "There's an error in the parameterList."))))
     (values token-list (append parsed-list appendent (list "</parameterList>")))))
 
 (defun compile-var-dec (token-list &optional (parsed-list '()))
@@ -338,14 +344,13 @@
 
 (defun is-op (token)
   "Return t if token is an op."
-  (when (member token '("+" "-" "*" "/" "&" "|" "<" ">" "=") :test 'string=)
-    t))
+  (member token '("+" "-" "*" "/" "&" "|" "<" ">" "=") :test 'string=))
 
 (defun compile-expression (token-list &optional (parsed-list '()))
   "Structure: term (op term)*"
   (let ((appendent (list)))
-    (when (is-term token-list)
-      (setf appendent (list "<expression>" "<term>"))
+    (when (is-term (first token-list))
+      (setf appendent (list "<expression>"))
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-term token-list appendent)
 	(setf token-list new-rest-tokens)
@@ -356,38 +361,36 @@
 		   (compile-term (rest token-list) appendent)
 		 (setf token-list new-rest-tokens)
 		 (setf appendent new-appendent)))
-      (nconc appendent (list "</term>" "</expression>")))
+      (nconc appendent (list "</expression>")))
     (values token-list (append parsed-list appendent))))
 
-(defun is-term (token-list)
+(defun is-term (token)
   "Returns t if the next (several) element(s) is(are) term(s)."
-  (let ((first-element (first token-list)))
-    (when (or (eql 'int-const first-element)
-	      (eql 'string-const first-element)
-	      (eql 'keyword first-element)
-	      (string= #\( first-element)
-	      (member first-element '("-" "~") :test 'string=)
-	      (eql 'identifier (token-type first-element)))
-      t)))
+  (or (eql 'int-const (token-type token))
+      (eql 'string-const (token-type token))
+      (eql 'keyword (token-type token))
+      (string= #\( token)
+      (member token '("-" "~") :test 'string=)
+      (eql 'identifier (token-type token))))
 
 (defun compile-term (token-list &optional (parsed-list '()))
   "Structure: integerConstant | stringConstant | keywordConstant | varName | varName '[' expression ']' | subroutineCall | '(' expression ')' | unaryOp term"
   (let ((appendent (list "<term>")))
     (cond ((eql 'int-const (token-type (first token-list)))
-	   (setf token-list (rest token-list))
 	   (nconc appendent (list (concatenate 'string "<integerConstant> "
 					       (first token-list)
-					       " </integerConstant>"))))
+					       " </integerConstant>")))
+	   (setf token-list (rest token-list)))
 	  ((eql 'string-const (token-type (first token-list)))
-	   (setf token-list (rest token-list))
 	   (nconc appendent (list (concatenate 'string "<stringConstant> "
 					       (first token-list)
-					       " </stringConstant>"))))
+					       " </stringConstant>")))
+	   (setf token-list (rest token-list)))
 	  ((eql 'keyword (token-type (first token-list)))
-	   (setf token-list (rest token-list))
 	   (nconc appendent (list (concatenate 'string "<keyword> "
 					       (first token-list)
-					       " </keyword>"))))
+					       " </keyword>")))
+	   (setf token-list (rest token-list)))
 	  ((string= #\( (first token-list))
 	   (nconc appendent (list "<symbol> ( </symbol>"))
 	   (multiple-value-bind (new-rest-tokens new-appendent)
@@ -493,13 +496,13 @@
 	(with-open-file (stream xml-file :direction :output :if-exists :supersede)
 	  (jack-parser tokenizer jack-file stream))))))
 
-; (parser-writer "~/nand2tetris/projects/10/ExpressionLessSquare/" #'tokenizer)
+(parser-writer "~/nand2tetris/projects/10/ExpressionLessSquare/" #'tokenizer)
 ;; Unit tests
 (defun compile-var-dec-test ()
   (compile-var-dec (list "var" "int" "bar" "," "foo" ";") '()))
 
 (defun compile-expression-test ()
-  (compile-expression (list "foo") '()))
+  (compile-expression (list "bar" "+" "barz" "-" "foo") '()))
 
 (defun compile-let-test ()
   (compile-let (list "let" "tmp" "=" "foo" ";") '()))
@@ -516,12 +519,16 @@
 (defun compile-expression-list-test ()
   (compile-expression-list (list "kos" "," "nko" "," "oii")))
 
+(defun compile-expres)
+
 (defun compile-subroutine-call-test ()
   ;; (compile-subroutine-call '("did" "(" ")"))
   (compile-subroutine-call '("did" "(" "expr" ")" "." "expr2" "(" ")")))
 
 (defun compile-do-test ()
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
+
+
 
 
 ;; (print (tokenizer "/home/j/nand2tetris/projects/10/ExpressionLessSquare/Main.jack"))
