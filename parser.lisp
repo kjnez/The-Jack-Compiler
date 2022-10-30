@@ -236,7 +236,6 @@
 	(error "varName should be an identifier."))
     (let ((rest-tokens (cddr token-list)))
       (when (string= #\[ (first rest-tokens))
-	(print "inside of when")
 	(nconc appendent (list "<symbol> [ </symbol>"))
 	(multiple-value-bind (new-token-list new-appendent)
 	    (compile-expression (rest rest-tokens) appendent)
@@ -247,7 +246,7 @@
 	(setf rest-tokens (rest rest-tokens)))
       (assert (string= #\= (first rest-tokens)))
       (nconc appendent (list "<symbol> = </symbol>"))
-      (assert (eql 'identifier (token-type (second rest-tokens))))
+      ;; (assert (eql 'identifier (token-type (second rest-tokens))))
       (multiple-value-bind (new-token-list new-appendent)
 	  (compile-expression (rest rest-tokens) appendent)
 	(setf rest-tokens new-token-list)
@@ -271,7 +270,6 @@
   (let ((appendent (list "<whileStatement>" "<keyword> while </keyword>")))
     (assert (string= #\( (second token-list)))
     (nconc appendent (list "<symbol> ( </symbol>"))
-    ;; for now, assume expression is an identifier
     (let ((rest-tokens (cddr token-list)))
       (multiple-value-bind (new-token-list new-appendent)
 	  (compile-expression rest-tokens appendent)
@@ -297,7 +295,7 @@
   (let ((appendent (list "<returnStatement>" "<keyword> return </keyword>"))
 	(rest-tokens token-list))
     ;; for now assume expression is an identifier
-    (if (eql 'identifier (token-type (second rest-tokens)))
+    (if (is-term (second rest-tokens))
 	(multiple-value-bind (new-token-list new-appendent)
 	    (compile-expression (rest rest-tokens) appendent)
 	  (setf rest-tokens new-token-list)
@@ -344,7 +342,18 @@
 
 (defun is-op (token)
   "Return t if token is an op."
-  (member token '("+" "-" "*" "/" "&" "|" "<" ">" "=") :test 'string=))
+  (when (member token '("+" "-" "*" "/" "&" "|" "<" ">" "=") :test 'string=)
+    t))
+
+(defun normalize-op (token)
+  "Change '<' to '&lt;', '>' to '&gt;', '&' to '&amp;'."
+  (cond ((string= #\< token)
+	 "&lt;")
+	((string= #\> token)
+	 "&gt;")
+	((string= #\& token)
+	 "&amp;")
+	(t token)))
 
 (defun compile-expression (token-list &optional (parsed-list '()))
   "Structure: term (op term)*"
@@ -356,7 +365,10 @@
 	(setf token-list new-rest-tokens)
 	(setf appendent new-appendent))
       (loop while (is-op (first token-list))
-	    do (nconc appendent (list (concatenate 'string "<symbol> " (first token-list) " </symbol>")))
+	    do (nconc appendent (list (concatenate 'string
+						   "<symbol> "
+						   (normalize-op (string (first token-list)))
+						   " </symbol>")))
 	       (multiple-value-bind (new-rest-tokens new-appendent)
 		   (compile-term (rest token-list) appendent)
 		 (setf token-list new-rest-tokens)
@@ -383,7 +395,7 @@
 	   (setf token-list (rest token-list)))
 	  ((eql 'string-const (token-type (first token-list)))
 	   (nconc appendent (list (concatenate 'string "<stringConstant> "
-					       (first token-list)
+					       (subseq (first token-list) 1 (1- (length (first token-list))))
 					       " </stringConstant>")))
 	   (setf token-list (rest token-list)))
 	  ((eql 'keyword (token-type (first token-list)))
@@ -400,12 +412,6 @@
 	   (assert (string= #\) (first token-list)))
 	   (setf token-list (rest token-list))
 	   (nconc appendent (list "<symbol> ) </symbol>")))
-	  ((member (first token-list) '("-" "~") :test 'string=)
-	   (nconc appendent (list (concatenate 'string "<unaryOp> " (first token-list) " </unaryOp>")))
-	   (multiple-value-bind (new-rest-tokens new-appendent)
-	       (compile-term (rest token-list) appendent)
-	     (setf token-list new-rest-tokens)
-	     (setf appendent new-appendent)))
 	  ((eql 'identifier (token-type (first token-list)))
 	   (cond ((string= #\[ (second token-list))
 		  (nconc appendent
@@ -430,8 +436,21 @@
 					    (first token-list)
 					    " </identifier>")))
 		    (setf token-list (rest token-list)))))
+	  ((member (first token-list) '("-" "~") :test 'string=)
+	   (nconc appendent (list (concatenate 'string "<symbol> "
+					       (normalize-unary-op (first token-list))
+					       " </symbol>")))
+	   (multiple-value-bind (new-rest-tokens new-appendent)
+	       (compile-term (rest token-list) appendent)
+	     (setf token-list new-rest-tokens)
+	     (setf appendent new-appendent)))
 	  (t (error "Invalid term.")))
     (values token-list (append parsed-list appendent (list "</term>")))))
+
+(defun normalize-unary-op (token)
+  (if (string= #\~ token)
+      "~~"
+      (string token)))
 
 (defun compile-subroutine-call (token-list &optional (parsed-list '()))
   "Structure: subroutineName '(' expressionList ')' | (className | varName) '.' subroutineName '(' expressionList ')'"
@@ -464,9 +483,6 @@
 
 (defun compile-expression-list (token-list &optional (parsed-list '()))
   "Structure: (expression (',' expression)*)?"
-  ;; for now assume expression is an identifer
-  ;; (unless (eql 'identifier (token-type (first token-list)))
-  ;;   (return-from compile-expression-list (values token-list parsed-list)))
   (let ((appendent (list "<expressionList>"))
 	(rest-tokens token-list))
     (multiple-value-bind (new-rest-tokens new-appendent)
@@ -496,7 +512,6 @@
 	(with-open-file (stream xml-file :direction :output :if-exists :supersede)
 	  (jack-parser tokenizer jack-file stream))))))
 
-(parser-writer "~/nand2tetris/projects/10/ExpressionLessSquare/" #'tokenizer)
 ;; Unit tests
 (defun compile-var-dec-test ()
   (compile-var-dec (list "var" "int" "bar" "," "foo" ";") '()))
@@ -519,8 +534,6 @@
 (defun compile-expression-list-test ()
   (compile-expression-list (list "kos" "," "nko" "," "oii")))
 
-(defun compile-expres)
-
 (defun compile-subroutine-call-test ()
   ;; (compile-subroutine-call '("did" "(" ")"))
   (compile-subroutine-call '("did" "(" "expr" ")" "." "expr2" "(" ")")))
@@ -529,16 +542,5 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-
-
-;; (print (tokenizer "/home/j/nand2tetris/projects/10/ExpressionLessSquare/Main.jack"))
-
-;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Main.jack")))
-;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Square.jack")))
-;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/SquareGame.jack")))
-
-
-
-
-
+;; (parser-writer "~/nand2tetris/projects/10/Square/" #'tokenizer)
 
