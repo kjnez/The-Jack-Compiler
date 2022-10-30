@@ -1,9 +1,9 @@
 ;;;; compiler.asd
 
 (asdf:defsystem #:compiler
-  :description "Describe compiler here"
-  :author "Your Name <your.name@example.com>"
-  :license  "Specify license here"
+  :description "The Jack Compiler"
+  :author "Yingnan Cui"
+  :license  "MIT"
   :version "0.0.1"
   :serial t
   :depends-on (#:uiop #:split-sequence)

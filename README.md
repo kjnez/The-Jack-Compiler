@@ -1,9 +1,7 @@
-# compiler
-### _Your Name <your.name@example.com>_
+# The Jack Compiler
 
-This is a project to do ... something.
+An implementation of the Jack compiler described in "The Elements of Computing Systems" with Ansi Common Lisp.
 
 ## License
 
-Specify license here
-
+MIT

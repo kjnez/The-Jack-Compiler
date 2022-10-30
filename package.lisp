@@ -2,4 +2,4 @@
 
 (defpackage #:compiler
   (:use #:cl)
-  (:export :tokenizer))
+  (:export :tokenizer :parser-writer))
