@@ -336,19 +336,99 @@
       (setf rest-tokens (rest rest-tokens)))
     (values rest-tokens (append parsed-list appendent (list "</ifStatement>")))))
 
+(defun is-op (token)
+  "Return t if token is an op."
+  (when (member token '("+" "-" "*" "/" "&" "|" "<" ">" "=") :test 'string=)
+    t))
+
 (defun compile-expression (token-list &optional (parsed-list '()))
   "Structure: term (op term)*"
-  ;; (declare (optimize debug))
-  (if (or (eql 'identifier (token-type (first token-list)))
-	  (eql 'keyword (token-type (first token-list))))
-      (values (rest token-list)
-	      (append parsed-list
-		      (list "<expression>" "<term>")
-		      (list (concatenate 'string "<identifier> "
-					 (first token-list)
-					 " </identifier>"))
-		      (list "</term>" "</expression>")))
-      (values token-list parsed-list)))
+  (let ((appendent (list)))
+    (when (is-term token-list)
+      (setf appendent (list "<expression>" "<term>"))
+      (multiple-value-bind (new-rest-tokens new-appendent)
+	  (compile-term token-list appendent)
+	(setf token-list new-rest-tokens)
+	(setf appendent new-appendent))
+      (loop while (is-op (first token-list))
+	    do (nconc appendent (list (concatenate 'string "<symbol> " (first token-list) " </symbol>")))
+	       (multiple-value-bind (new-rest-tokens new-appendent)
+		   (compile-term (rest token-list) appendent)
+		 (setf token-list new-rest-tokens)
+		 (setf appendent new-appendent)))
+      (nconc appendent (list "</term>" "</expression>")))
+    (values token-list (append parsed-list appendent))))
+
+(defun is-term (token-list)
+  "Returns t if the next (several) element(s) is(are) term(s)."
+  (let ((first-element (first token-list)))
+    (when (or (eql 'int-const first-element)
+	      (eql 'string-const first-element)
+	      (eql 'keyword first-element)
+	      (string= #\( first-element)
+	      (member first-element '("-" "~") :test 'string=)
+	      (eql 'identifier (token-type first-element)))
+      t)))
+
+(defun compile-term (token-list &optional (parsed-list '()))
+  "Structure: integerConstant | stringConstant | keywordConstant | varName | varName '[' expression ']' | subroutineCall | '(' expression ')' | unaryOp term"
+  (let ((appendent (list "<term>")))
+    (cond ((eql 'int-const (token-type (first token-list)))
+	   (setf token-list (rest token-list))
+	   (nconc appendent (list (concatenate 'string "<integerConstant> "
+					       (first token-list)
+					       " </integerConstant>"))))
+	  ((eql 'string-const (token-type (first token-list)))
+	   (setf token-list (rest token-list))
+	   (nconc appendent (list (concatenate 'string "<stringConstant> "
+					       (first token-list)
+					       " </stringConstant>"))))
+	  ((eql 'keyword (token-type (first token-list)))
+	   (setf token-list (rest token-list))
+	   (nconc appendent (list (concatenate 'string "<keyword> "
+					       (first token-list)
+					       " </keyword>"))))
+	  ((string= #\( (first token-list))
+	   (nconc appendent (list "<symbol> ( </symbol>"))
+	   (multiple-value-bind (new-rest-tokens new-appendent)
+	       (compile-expression (rest token-list) appendent)
+	     (setf token-list new-rest-tokens)
+	     (setf appendent new-appendent))
+	   (assert (string= #\) (first token-list)))
+	   (setf token-list (rest token-list))
+	   (nconc appendent (list "<symbol> ) </symbol>")))
+	  ((member (first token-list) '("-" "~") :test 'string=)
+	   (nconc appendent (list (concatenate 'string "<unaryOp> " (first token-list) " </unaryOp>")))
+	   (multiple-value-bind (new-rest-tokens new-appendent)
+	       (compile-term (rest token-list) appendent)
+	     (setf token-list new-rest-tokens)
+	     (setf appendent new-appendent)))
+	  ((eql 'identifier (token-type (first token-list)))
+	   (cond ((string= #\[ (second token-list))
+		  (nconc appendent
+			 (list (concatenate 'string "<identifier> "
+					    (first token-list)
+					    " </identifier>"))
+			 (list "<symbol> [ </symbol>"))
+		  (multiple-value-bind (new-rest-tokens new-appendent)
+		      (compile-expression (cddr token-list) appendent)
+		    (setf token-list new-rest-tokens)
+		    (setf appendent new-appendent))
+		  (assert (string= #\] (first token-list)))
+		  (nconc appendent (list "<symbol> ] </symbol>"))
+		  (setf token-list (rest token-list)))
+		 ((or (string= #\( (second token-list))
+		      (string= #\. (second token-list)))
+		  (multiple-value-bind (new-rest-tokens new-appendent)
+		      (compile-subroutine-call token-list appendent)
+		    (setf token-list new-rest-tokens)
+		    (setf appendent new-appendent)))
+		 (t (nconc appendent (list (concatenate 'string "<identifier> "
+					    (first token-list)
+					    " </identifier>")))
+		    (setf token-list (rest token-list)))))
+	  (t (error "Invalid term.")))
+    (values token-list (append parsed-list appendent (list "</term>")))))
 
 (defun compile-subroutine-call (token-list &optional (parsed-list '()))
   "Structure: subroutineName '(' expressionList ')' | (className | varName) '.' subroutineName '(' expressionList ')'"
@@ -443,25 +523,15 @@
 (defun compile-do-test ()
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
-;; (defun run-unit-tests ()
-;;   (multiple-value-bind (t-list p-list)
-;;       (compile-var-dec-test)
-;;     (print p-list))
-;;   (multiple-value-bind (t-list p-list)
-;;       (compile-expression-test)
-;;     (print p-list))
-;;   (multiple-value-bind (t-list p-list)
-;;       (compile-let-test)
-;;     (print p-list)))
-
 
 ;; (print (tokenizer "/home/j/nand2tetris/projects/10/ExpressionLessSquare/Main.jack"))
 
-(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Main.jack")))
-(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Square.jack")))
-(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/SquareGame.jack")))
+;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Main.jack")))
+;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/Square.jack")))
+;(print (compile-class (tokenizer "~/nand2tetris/projects/10/ExpressionLessSquare/SquareGame.jack")))
 
 
-;;(step (compile-subroutine (list "function" "void" "more" #\( #\) #\{ "var" "boolean" "b" #\; "if" #\( "b" #\) #\{ #\} "else" #\{ #\} "return" #\; #\} #\})))
+
+
 
 
