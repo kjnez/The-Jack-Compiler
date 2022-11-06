@@ -9,5 +9,5 @@
   :depends-on (#:uiop #:split-sequence)
   :components ((:file "package")
                (:file "tokenizer")
-	       (:file "parser")
-	       (:file "symbol-table")))
+	       (:file "symbol-table")
+	       (:file "parser")))
