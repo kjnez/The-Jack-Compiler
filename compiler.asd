@@ -10,4 +10,5 @@
   :components ((:file "package")
                (:file "tokenizer")
 	       (:file "symbol-table")
-	       (:file "parser")))
+	       (:file "parser")
+	       (:file "compilation-engine")))
