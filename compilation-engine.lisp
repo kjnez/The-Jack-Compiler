@@ -4,7 +4,7 @@
 (defun compile-class (token-list)
   "The highest level parser for each class. Returns a new token-list and a parsed-list.
    Structure: 'class' className '{' classVarDec* subroutineDec* '}'"
-  (defparameter *h* (make-symbol-table))
+  (defparameter *h* (make-tables))
   (let ((parsed-list (list))
 	(class-name (second token-list)))
     (if (string= "class" (first token-list))
@@ -601,5 +601,6 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-;; (parser-writer "~/nand2tetris/projects/10/Square/" #'tokenizer)
+; (parser-writer "~/nand2tetris/projects/10/Square/" #'tokenizer)
+
 
