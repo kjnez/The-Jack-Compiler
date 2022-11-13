@@ -3,7 +3,9 @@
 
 (defun write-push (segment index)
   "Writes a VM push command."
-  (concatenate 'string "push " segment " " (write-to-string index)))
+  (if segment
+      (concatenate 'string "push " segment " " (write-to-string index))
+      (concatenate 'string "push " (write-to-string index))))
 
 (defun write-pop (segment index)
   "Writes a VM pop command."
@@ -11,7 +13,29 @@
 
 (defun write-arithmetic (command)
   "Writes a VM arithmetic command."
-  command)
+  (cond ((string= #\+ command)
+	 "add")
+	((string= #\- command)
+	 "sub")
+	((string= #\= command)
+	 "eq")
+	((string= #\> command)
+	 "gt")
+	((string= #\< command)
+	 "lt")
+	((string= #\& command)
+	 "and")
+	((string= #\| command)
+	 "or")
+	((string= #\* command)
+	 (write-call "Math.multiply" 2))
+	((string= #\/ command)
+	 (write-call "Math.divide" 2))
+	((string= #\~ command)
+	 "not")
+	((string= "neg" command)
+	 "neg")
+	(t (error "Arithmetic command not recognized."))))
 
 (defun write-label (label)
   "Writes a VM label command."

@@ -5,6 +5,7 @@
   "The highest level parser for each class. Returns a new token-list and a parsed-list.
    Structure: 'class' className '{' classVarDec* subroutineDec* '}'"
   (defparameter *h* (make-tables))
+  (defparameter *label-count* 0)
   (let ((parsed-list (list))
 	(class-name (second token-list)))
     (if (string= "class" (first token-list))
@@ -98,9 +99,10 @@
 (defun compile-subroutine (token-list &optional (parsed-list '()))
   "Structure: ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody"
   (let ((appendent (list "<subroutineDec>"))
+	(subroutine-name (third token-list))
 	(type (second token-list)))
     (nconc appendent (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
-    (if (or (string= "void" (second token-list)) (is-type (second token-list)))
+    (if (or (string= "void" type) (is-type type))
 	(if (eql 'identifier (token-type (second token-list)))
 	    (nconc appendent (list (concatenate 'string
 						"<identifier> "
@@ -113,12 +115,11 @@
 						" </keyword>"))))
 	(error "The second token of subroutineDec should be type or 'void'."))
     (if (eql 'identifier (token-type (third token-list)))
-	(progn
-	  (nconc appendent (list (concatenate 'string
-					      "<identifier> "
-					      (third token-list)
-					      " #\# subroutine defined nil"
-					      " </identifier>"))))
+	(nconc appendent (list (concatenate 'string
+					    "<identifier> "
+					    (third token-list)
+					    " #\# subroutine defined nil"
+					    " </identifier>")))
 	(error "The third token of subroutineDec should be an identifier."))
     (let ((rest-tokens (cdddr token-list)))
       (if (string= "(" (first rest-tokens))
@@ -142,8 +143,11 @@
 		   (compile-var-dec rest-tokens appendent)
 		 (setf rest-tokens new-rest-tokens)
 		 (setf appendent new-appendent)))
+      (nconc appendent (list (write-function
+			      (concatenate 'string (type-of* *h* "this") "." subroutine-name)
+			      (var-count *h* "var"))))
       (multiple-value-bind (new-rest-tokens new-appendent)
-	  (compile-statements rest-tokens appendent)
+	  (compile-statements rest-tokens appendent type)
 	(setf rest-tokens new-rest-tokens)
 	(setf appendent new-appendent))
       (if (string= "}" (first rest-tokens))
@@ -235,7 +239,7 @@
 					    (list "<symbol> ; </symbol>" "</varDec>")))
 	  (error "Last element of varDec should be ;.")))))
 
-(defun compile-statement (token-list &optional (parsed-list '()))
+(defun compile-statement (token-list &optional (parsed-list '()) type)
   "Structure: (let | if | while | do | return)"
   (let ((first-element (first token-list)))
     (cond ((string= "let" first-element)
@@ -247,22 +251,23 @@
 	  ((string= "do" first-element)
 	   (compile-do token-list parsed-list))
 	  ((string= "return" first-element)
-	   (compile-return token-list parsed-list))
+	   (compile-return token-list parsed-list type))
 	  (t (error "Statement not recognized.")))))
 
-(defun compile-statements (token-list &optional (parsed-list '()))
+(defun compile-statements (token-list &optional (parsed-list '()) type)
   (let ((appendent (list "<statements>"))
 	(rest-tokens token-list))
     (loop while (member (first rest-tokens) '("let" "if" "while" "do" "return") :test 'string=)
 	  do (multiple-value-bind (new-rest-tokens new-appendent)
-		 (compile-statement rest-tokens appendent)
+		 (compile-statement rest-tokens appendent type)
 	       (setf rest-tokens new-rest-tokens)
 	       (setf appendent new-appendent)))
     (values rest-tokens (append parsed-list appendent '("</statements>")))))
 
 (defun compile-let (token-list &optional (parsed-list '()))
   "Structure: 'let' varName ('[' expression ']')? '=' expression ';'"
-  (let ((appendent (list "<letStatement>" "<keyword> let </keyword>")))
+  (let ((appendent (list "<letStatement>" "<keyword> let </keyword>"))
+	(var-name (second token-list)))
     (if (eql 'identifier (token-type (second token-list)))
 	(nconc appendent (list (concatenate 'string
 					    "<identifier> "
@@ -289,6 +294,8 @@
 	(setf rest-tokens new-token-list)
 	(setf appendent new-appendent))
       (assert (string= #\; (first rest-tokens)))
+      (let ((seg (if (string= "var" (kind-of *h* var-name)) "local" "argument")))
+       (nconc appendent (list (write-pop seg (index-of *h* var-name)))))
       (values (rest rest-tokens)
 	      (append parsed-list appendent
 		      (list "<symbol> ; </symbol>" "</letStatement>"))))))
@@ -304,7 +311,11 @@
 
 (defun compile-while (token-list &optional (parsed-list '()))
   "Structure: 'while' '(' expression ')' '{' statements '}'"
-  (let ((appendent (list "<whileStatement>" "<keyword> while </keyword>")))
+  (let ((appendent (list "<whileStatement>" "<keyword> while </keyword>"))
+	(label1 (concatenate 'string "L" (write-to-string *label-count*)))
+	(label2 (concatenate 'string "L" (write-to-string (1+ *label-count*)))))
+    (setf *label-count* (+ 2 *label-count*))
+    (nconc appendent (list (write-label label1)))
     (assert (string= #\( (second token-list)))
     (nconc appendent (list "<symbol> ( </symbol>"))
     (let ((rest-tokens (cddr token-list)))
@@ -314,6 +325,7 @@
 	(setf appendent new-appendent))
       (assert (string= #\) (first rest-tokens)))
       (nconc appendent (list "<symbol> ) </symbol>"))
+      (nconc appendent (list (write-if label2)))
       (assert (string= #\{ (second rest-tokens)))
       (nconc appendent (list "<symbol> { </symbol>"))
       (multiple-value-bind (new-token-list new-appendent)
@@ -321,12 +333,14 @@
 	(setf rest-tokens new-token-list)
 	(setf appendent new-appendent))
       (assert (string= #\} (first rest-tokens)))
+      (nconc appendent (list (write-goto label1)))
+      (nconc appendent (list (write-label label2)))
       ;; (nconc appendent (list "<symbol> } </symbol>"))
       (values (cdr rest-tokens) (append parsed-list appendent
 					(list "<symbol> } </symbol>")
 					(list "</whileStatement>"))))))
 
-(defun compile-return (token-list &optional (parsed-list '()))
+(defun compile-return (token-list &optional (parsed-list '()) type)
   "Structure: 'return' expression? ';'"
   ;; (declare (optimize debug))
   (let ((appendent (list "<returnStatement>" "<keyword> return </keyword>"))
@@ -339,13 +353,19 @@
 	  (setf appendent new-appendent))
 	(setf rest-tokens (rest rest-tokens)))
     (assert (string= #\; (first rest-tokens)))
+    (when (string= "void" type)
+      (nconc appendent (list (write-push "constant" 0))))
+    (nconc appendent (list (write-return)))
     (values (rest rest-tokens) (append parsed-list appendent
 				       (list "<symbol> ; </symbol>" "</returnStatement>")))))
 
 (defun compile-if (token-list &optional (parsed-list '()))
   "Structure: 'if' '(' expression ')' '{' statements '}'"
   (let ((appendent (list "<ifStatement>" "<keyword> if </keyword>"))
-	(rest-tokens token-list))
+	(rest-tokens token-list)
+	(label1 (concatenate 'string "L" (write-to-string *label-count*)))
+	(label2 (concatenate 'string "L" (write-to-string (1+ *label-count*)))))
+    (setf *label-count* (+ 2 *label-count*))
     (assert (string= "if" (first rest-tokens)))
     (assert (string= #\( (second rest-tokens)))
     (nconc appendent (list "<symbol> ( </symbol>"))
@@ -355,6 +375,7 @@
       (setf appendent new-appendent))
     (assert (string= #\) (first rest-tokens)))
     (nconc appendent (list "<symbol> ) </symbol>"))
+    (nconc appendent (list (write-if label1)))
     (assert (string= #\{ (second rest-tokens)))
     (nconc appendent (list "<symbol> { </symbol>"))
     (multiple-value-bind (new-rest-tokens new-appendent)
@@ -364,10 +385,12 @@
     (assert (string= #\} (first rest-tokens)))
     (setf appendent (append appendent (list "<symbol> } </symbol>")))
     (setf rest-tokens (rest rest-tokens))
+    (nconc appendent (list (write-goto label2)))
     (when (string= "else" (first rest-tokens))
       (nconc appendent (list "<keyword> else </keyword>"))
       (assert (string= #\{ (second rest-tokens)))
       (nconc appendent (list "<symbol> { </symbol>"))
+      (nconc appendent (list (write-label label1)))
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-statements (cddr rest-tokens) appendent)
 	(setf rest-tokens new-rest-tokens)
@@ -375,6 +398,7 @@
       (assert (string= #\} (first rest-tokens)))
       (setf appendent (append appendent (list "<symbol> } </symbol>")))
       (setf rest-tokens (rest rest-tokens)))
+    (nconc appendent (list (write-label label2)))
     (values rest-tokens (append parsed-list appendent (list "</ifStatement>")))))
 
 (defun is-op (token)
@@ -392,7 +416,7 @@
 	 "&amp;")
 	(t token)))
 
-(defun compile-expression (token-list &optional (parsed-list '()))
+(defun compile-expression (token-list &optional (parsed-list '()) (n 0))
   "Structure: term (op term)*"
   (let ((appendent (list)))
     (when (is-term (first token-list))
@@ -406,12 +430,15 @@
 						   "<symbol> "
 						   (normalize-op (string (first token-list)))
 						   " </symbol>")))
-	       (multiple-value-bind (new-rest-tokens new-appendent)
-		   (compile-term (rest token-list) appendent)
-		 (setf token-list new-rest-tokens)
-		 (setf appendent new-appendent)))
-      (nconc appendent (list "</expression>")))
-    (values token-list (append parsed-list appendent))))
+	       (let ((op (string (first token-list))))
+		 (multiple-value-bind (new-rest-tokens new-appendent)
+		     (compile-term (rest token-list) appendent)
+		   (setf token-list new-rest-tokens)
+		   (setf appendent new-appendent))
+		 (nconc appendent (list (write-arithmetic op)))))
+      (nconc appendent (list "</expression>"))
+      (incf n))
+    (values token-list (append parsed-list appendent) n)))
 
 (defun is-term (token)
   "Returns t if the next (several) element(s) is(are) term(s)."
@@ -429,6 +456,7 @@
 	   (nconc appendent (list (concatenate 'string "<integerConstant> "
 					       (first token-list)
 					       " </integerConstant>")))
+	   (nconc appendent (list (write-push "constant" (parse-integer (first token-list)))))
 	   (setf token-list (rest token-list)))
 	  ((eql 'string-const (token-type (first token-list)))
 	   (nconc appendent (list (concatenate 'string "<stringConstant> "
@@ -439,6 +467,16 @@
 	   (nconc appendent (list (concatenate 'string "<keyword> "
 					       (first token-list)
 					       " </keyword>")))
+	   (let ((keyword-constant (first token-list)))
+	     (cond ((or (string= "false" keyword-constant)
+			(string= "null" keyword-constant))
+		    (nconc appendent (list (write-push "constant" 0))))
+		   ((string= "true" keyword-constant)
+		    (nconc appendent (list (write-push "constant" 1)
+					   (write-arithmetic #\~))))
+		   ((string= "this" keyword-constant)
+		    (nconc appendent (list (write-push "this" 0))))
+		   (t (error "Keyword-constant not recognized."))))
 	   (setf token-list (rest token-list)))
 	  ((string= #\( (first token-list))
 	   (nconc appendent (list "<symbol> ( </symbol>"))
@@ -476,15 +514,20 @@
 							" #\# var used t "
 							(write-to-string (index-of *h* (first token-list)))
 							" </identifier>")))
+		    (nconc appendent (list (write-push "local" (index-of *h* (first token-list)))))
 		    (setf token-list (rest token-list)))))
 	  ((member (first token-list) '("-" "~") :test 'string=)
-	   (nconc appendent (list (concatenate 'string "<symbol> "
-					       (normalize-unary-op (first token-list))
-					       " </symbol>")))
-	   (multiple-value-bind (new-rest-tokens new-appendent)
-	       (compile-term (rest token-list) appendent)
-	     (setf token-list new-rest-tokens)
-	     (setf appendent new-appendent)))
+	   (let ((unary-op (first token-list)))
+	     (nconc appendent (list (concatenate 'string "<symbol> "
+						 (normalize-unary-op (first token-list))
+						 " </symbol>")))
+	     (multiple-value-bind (new-rest-tokens new-appendent)
+		 (compile-term (rest token-list) appendent)
+	       (setf token-list new-rest-tokens)
+	       (setf appendent new-appendent))
+	     (if (string= #\~ unary-op)
+		 (nconc appendent (list (write-arithmetic #\~)))
+		 (nconc appendent (list (write-arithmetic "neg"))))))
 	  (t (error "Invalid term.")))
     (values token-list (append parsed-list appendent (list "</term>")))))
 
@@ -496,7 +539,8 @@
 (defun compile-subroutine-call (token-list &optional (parsed-list '()))
   "Structure: subroutineName '(' expressionList ')' | (className | varName) '.' subroutineName '(' expressionList ')'"
   (let ((appendent (list))
-	(rest-tokens token-list))
+	(rest-tokens token-list)
+	(n-expressions 0))
     (assert (eql 'identifier (token-type (first rest-tokens))))
     (cond ((string= #\( (second rest-tokens))
 	   (setf appendent (list (concatenate 'string "<identifier> "
@@ -504,11 +548,13 @@
 					      " #\# subroutine used nil"
 					      " </identifier>")))
 	   (nconc appendent (list "<symbol> ( </symbol>"))
-	   (multiple-value-bind (new-rest-tokens new-appendent)
+	   (multiple-value-bind (new-rest-tokens new-appendent num-expressions)
 	       (compile-expression-list (cddr rest-tokens) appendent)
 	     (setf rest-tokens new-rest-tokens)
-	     (setf appendent new-appendent))
+	     (setf appendent new-appendent)
+	     (setf n-expressions num-expressions))
 	   (assert (string= #\) (first rest-tokens)))
+	   (nconc appendent (list (write-call (first token-list) n-expressions)))
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  ((string= #\. (second rest-tokens))
 	   (if (string= "var" (kind-of *h* (first rest-tokens)))
@@ -531,11 +577,18 @@
 					       " </identifier>")))
 	   (assert (string= #\( (fourth rest-tokens)))
 	   (nconc appendent (list "<symbol> ( </symbol>"))
-	   (multiple-value-bind (new-rest-tokens new-appendent)
+	   (multiple-value-bind (new-rest-tokens new-appendent num-expressions)
 	       (compile-expression-list (nthcdr 4 rest-tokens) appendent)
 	     (setf rest-tokens new-rest-tokens)
-	     (setf appendent new-appendent))
+	     (setf appendent new-appendent)
+	     (setf n-expressions num-expressions))
 	   (assert (string= #\) (first rest-tokens)))
+	   (nconc appendent (list (write-call
+				   (concatenate 'string
+						(first token-list)
+						"."
+						(third token-list))
+				   n-expressions)))
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  (t (error "Something is wrong with the subroutine calling.")))
     (values (cdr rest-tokens) (append parsed-list appendent))))
@@ -543,18 +596,21 @@
 (defun compile-expression-list (token-list &optional (parsed-list '()))
   "Structure: (expression (',' expression)*)?"
   (let ((appendent (list "<expressionList>"))
-	(rest-tokens token-list))
-    (multiple-value-bind (new-rest-tokens new-appendent)
-	(compile-expression rest-tokens appendent)
+	(rest-tokens token-list)
+	(n-expressions 0))
+    (multiple-value-bind (new-rest-tokens new-appendent num-expressions)
+	(compile-expression rest-tokens appendent n-expressions)
       (setf rest-tokens new-rest-tokens)
-      (setf appendent new-appendent))
+      (setf appendent new-appendent)
+      (setf n-expressions num-expressions))
     (loop while (string= #\, (first rest-tokens))
 	  do (nconc appendent (list "<symbol> , </symbol>"))
-	     (multiple-value-bind (new-rest-tokens new-appendent)
-		 (compile-expression (rest rest-tokens) appendent)
+	     (multiple-value-bind (new-rest-tokens new-appendent num-expressions)
+		 (compile-expression (rest rest-tokens) appendent n-expressions)
 	       (setf rest-tokens new-rest-tokens)
-	       (setf appendent new-appendent)))
-    (values rest-tokens (append parsed-list appendent (list "</expressionList>")))))
+	       (setf appendent new-appendent)
+	       (setf n-expressions num-expressions)))
+    (values rest-tokens (append parsed-list appendent (list "</expressionList>")) n-expressions)))
 
 (defun jack-parser (tokenizer file stream)
   "Tokenize the file, then write the parsed results to stream."
@@ -601,6 +657,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-; (parser-writer "~/nand2tetris/projects/10/Square/" #'tokenizer)
-
-
+(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer)

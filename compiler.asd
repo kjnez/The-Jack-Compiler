@@ -11,4 +11,5 @@
                (:file "tokenizer")
 	       (:file "symbol-table")
 	       (:file "parser")
+	       (:file "vm-writer")
 	       (:file "compilation-engine")))

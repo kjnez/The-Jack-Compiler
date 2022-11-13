@@ -15,7 +15,8 @@
 	    (remove-if
 	     #'(lambda (str) (or (string= "" (string-trim '(#\space #\tab) str))
 				 (string= (char (string-trim '(#\space #\tab) str) 0) "/")
-				 (and (> (length str) 1) (string= (char str 1) "*"))))
+				 (and (> (length str) 1)
+				      (string= (char (string-trim '(#\space #\tab) str) 0) "*"))))
 	     lines))))
 
 (defun jack-analyzer (dir)
