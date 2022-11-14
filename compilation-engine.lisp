@@ -333,11 +333,13 @@
 	(setf rest-tokens new-token-list)
 	(setf appendent new-appendent))
       (assert (string= #\} (first rest-tokens)))
-      (nconc appendent (list (write-goto label1)))
-      (nconc appendent (list (write-label label2)))
-      ;; (nconc appendent (list "<symbol> } </symbol>"))
+      ;; (nconc appendent (list (write-goto label1))) ; This is wrong, but why?
+      ;; (nconc appendent (list (write-label label2)))
+      ;; (nconc appendent (list (concatenate 'string "current *label-count* is: " (write-to-string *label-count*))))
       (values (cdr rest-tokens) (append parsed-list appendent
 					(list "<symbol> } </symbol>")
+					(list (write-goto label1))
+					(list (write-label label2))
 					(list "</whileStatement>"))))))
 
 (defun compile-return (token-list &optional (parsed-list '()) type)
