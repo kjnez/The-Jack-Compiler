@@ -516,7 +516,9 @@
 							" #\# var used t "
 							(write-to-string (index-of *h* (first token-list)))
 							" </identifier>")))
-		    (nconc appendent (list (write-push "local" (index-of *h* (first token-list)))))
+					; the following line is problematic: it may not be local
+		    (let ((kind (if (string= "arg" (kind-of *h* (first token-list))) "argument" "local")))
+		     (nconc appendent (list (write-push kind (index-of *h* (first token-list))))))
 		    (setf token-list (rest token-list)))))
 	  ((member (first token-list) '("-" "~") :test 'string=)
 	   (let ((unary-op (first token-list)))
