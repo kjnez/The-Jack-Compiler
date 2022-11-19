@@ -31,7 +31,7 @@
 	 (write-call "Math.multiply" 2))
 	((string= #\/ command)
 	 (write-call "Math.divide" 2))
-	((string= #\~ command)
+	((or (string= #\~ command) (string= "not" command))
 	 "not")
 	((string= "neg" command)
 	 "neg")

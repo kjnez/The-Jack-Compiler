@@ -35,7 +35,7 @@
 	     (when (string= "method" (first token-list))
 	       (define *h* "this" class-name "arg"))
 	     (multiple-value-bind (new-token-list new-parsed-list)
-		 (compile-subroutine token-list parsed-list)
+		 (compile-subroutine token-list parsed-list class-name)
 	       (setf token-list new-token-list)
 	       (setf parsed-list new-parsed-list)))
     (if (string= #\} (first token-list))
@@ -97,7 +97,7 @@
   "Check if the token is ('int' | 'char' | boolean')."
   (member token (list "int" "char" "boolean") :test 'string=))
 
-(defun compile-subroutine (token-list &optional (parsed-list '()))
+(defun compile-subroutine (token-list &optional (parsed-list '()) class-name)
   "Structure: ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody"
   (let ((appendent (list "<subroutineDec>"))
 	(subroutine-name (third token-list))
@@ -135,7 +135,7 @@
 	  (nconc appendent (list "<symbol> ) </symbol>"))
 	  (error "Missing a ')' after parameterList."))
       (if (string= "{" (second rest-tokens))
-	  (nconc appendent (list "<subroutineBody>" "<symbol> { </symbol>")) ;; wrong before here
+	  (nconc appendent (list "<subroutineBody>" "<symbol> { </symbol>"))
 	  (error "Missing a '{' before subroutineBody."))
       (setf rest-tokens (cddr rest-tokens))
       ;; varDec
@@ -145,7 +145,7 @@
 		 (setf rest-tokens new-rest-tokens)
 		 (setf appendent new-appendent)))
       (nconc appendent (list (write-function
-			      (concatenate 'string (type-of* *h* "this") "." subroutine-name)
+			      (concatenate 'string class-name "." subroutine-name) ;wrong here
 			      (var-count *h* "var"))))
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-statements rest-tokens appendent type)
@@ -323,7 +323,7 @@
       (multiple-value-bind (new-token-list new-appendent)
 	  (compile-expression rest-tokens appendent)
 	(setf rest-tokens new-token-list)
-	(setf appendent new-appendent))
+	(setf appendent (nconc new-appendent (list (write-arithmetic "not")))))
       (assert (string= #\) (first rest-tokens)))
       (nconc appendent (list "<symbol> ) </symbol>"))
       (nconc appendent (list (write-if label2)))
@@ -375,7 +375,7 @@
     (multiple-value-bind (new-rest-tokens new-appendent)
 	(compile-expression (cddr rest-tokens) appendent)
       (setf rest-tokens new-rest-tokens)
-      (setf appendent new-appendent))
+      (setf appendent (nconc new-appendent (list (write-arithmetic "not")))))
     (assert (string= #\) (first rest-tokens)))
     (nconc appendent (list "<symbol> ) </symbol>"))
     (nconc appendent (list (write-if label1)))
@@ -476,7 +476,7 @@
 		    (nconc appendent (list (write-push "constant" 0))))
 		   ((string= "true" keyword-constant)
 		    (nconc appendent (list (write-push "constant" 1)
-					   (write-arithmetic #\~))))
+					   (write-arithmetic "neg"))))
 		   ((string= "this" keyword-constant)
 		    (nconc appendent (list (write-push "this" 0))))
 		   (t (error "Keyword-constant not recognized."))))
@@ -631,9 +631,13 @@
   (let* ((jack-files (directory (concatenate 'string dir "/*.jack")))
 	 (output-folder (concatenate 'string dir "/parsed/")))
     (dolist (jack-file jack-files)
-      (let ((xml-file (concatenate 'string output-folder (pathname-name jack-file) ".xml")))
-	(with-open-file (stream xml-file :direction :output :if-exists :supersede)
-	  (jack-parser tokenizer jack-file stream vm-only))))))
+      (if vm-only
+	  (let ((vm-file (concatenate 'string output-folder (pathname-name jack-file) ".vm")))
+	    (with-open-file (stream vm-file :direction :output :if-exists :supersede)
+	      (jack-parser tokenizer jack-file stream vm-only)))
+	  (let ((xml-file (concatenate 'string output-folder (pathname-name jack-file) ".xml")))
+	    (with-open-file (stream xml-file :direction :output :if-exists :supersede)
+	      (jack-parser tokenizer jack-file stream vm-only)))))))
 
 ;; Unit tests
 (defun compile-var-dec-test ()
@@ -665,4 +669,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer nil)
+(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer t)
