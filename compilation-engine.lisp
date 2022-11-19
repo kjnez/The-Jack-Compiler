@@ -32,7 +32,8 @@
     ;; Check if the next structure is subroutineDec
     (loop while (member (first token-list) '("constructor" "function" "method") :test 'string=)
 	  do (start-subroutine *h*)
-	     (define *h* "this" class-name "arg")
+	     (when (string= "method" (first token-list))
+	       (define *h* "this" class-name "arg"))
 	     (multiple-value-bind (new-token-list new-parsed-list)
 		 (compile-subroutine token-list parsed-list)
 	       (setf token-list new-token-list)
@@ -616,20 +617,23 @@
 	       (setf n-expressions num-expressions)))
     (values rest-tokens (append parsed-list appendent (list "</expressionList>")) n-expressions)))
 
-(defun jack-parser (tokenizer file stream)
+(defun jack-parser (tokenizer file stream &optional (vm-only nil))
   "Tokenize the file, then write the parsed results to stream."
   (let* ((tokenized-list (funcall tokenizer file))
 	 (parsed-list (compile-class tokenized-list)))
     (dolist (line parsed-list)
-      (format stream (concatenate 'string line "~%")))))
+      (if vm-only
+       (when (not (char= #\< (char line 0)))
+	 (format stream (concatenate 'string line "~%")))
+       (format stream (concatenate 'string line "~%"))))))
 
-(defun parser-writer (dir &optional (tokenizer #'tokenizer))
+(defun parser-writer (dir &optional (tokenizer #'tokenizer) (vm-only nil))
   (let* ((jack-files (directory (concatenate 'string dir "/*.jack")))
 	 (output-folder (concatenate 'string dir "/parsed/")))
     (dolist (jack-file jack-files)
       (let ((xml-file (concatenate 'string output-folder (pathname-name jack-file) ".xml")))
 	(with-open-file (stream xml-file :direction :output :if-exists :supersede)
-	  (jack-parser tokenizer jack-file stream))))))
+	  (jack-parser tokenizer jack-file stream vm-only))))))
 
 ;; Unit tests
 (defun compile-var-dec-test ()
@@ -661,4 +665,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer)
+(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer nil)
