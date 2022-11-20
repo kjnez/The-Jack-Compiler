@@ -286,8 +286,11 @@
 					    (write-to-string (index-of *h* (second token-list)))
 					    " </identifier>")))
 	(error "varName should be an identifier."))
-    (let ((rest-tokens (cddr token-list)))
-      (when (string= #\[ (first rest-tokens))
+    (let* ((rest-tokens (cddr token-list))
+	   (array-assign (string= #\[ (first rest-tokens))))
+      (when array-assign
+	(nconc appendent (list (write-push (segment *h* var-name)
+					   (index-of *h* var-name))))
 	(nconc appendent (list "<symbol> [ </symbol>"))
 	(multiple-value-bind (new-token-list new-appendent)
 	    (compile-expression (rest rest-tokens) appendent)
@@ -295,6 +298,7 @@
 	  (setf appendent new-appendent))
 	(assert (string= #\] (first rest-tokens)))
 	(nconc appendent (list "<symbol> ] </symbol>"))
+	(nconc appendent (list (write-arithmetic #\+)))
 	(setf rest-tokens (rest rest-tokens)))
       (assert (string= #\= (first rest-tokens)))
       (nconc appendent (list "<symbol> = </symbol>"))
@@ -305,7 +309,12 @@
 	(setf appendent new-appendent))
       (assert (string= #\; (first rest-tokens)))
       (let ((seg (segment *h* var-name)))
-       (nconc appendent (list (write-pop seg (index-of *h* var-name)))))
+	(if array-assign
+	    (nconc appendent (list (write-pop "temp" 0)
+				   (write-pop "pointer" 1)
+				   (write-push "temp" 0)
+				   (write-pop "that" 0)))
+	    (nconc appendent (list (write-pop seg (index-of *h* var-name))))))
       (values (rest rest-tokens)
 	      (append parsed-list appendent
 		      (list "<symbol> ; </symbol>" "</letStatement>"))))))
@@ -475,6 +484,13 @@
 	   (nconc appendent (list (concatenate 'string "<stringConstant> "
 					       (subseq (first token-list) 1 (1- (length (first token-list))))
 					       " </stringConstant>")))
+	   (let* ((str (subseq (first token-list) 1 (1- (length (first token-list)))))
+		  (str-len (length str)))
+	     (nconc appendent (list (write-push "constant" str-len)
+				    (write-call "String.new" 1)))
+	     (dotimes (i str-len)
+	       (nconc appendent (list (write-push "constant" (char-int (char str i)))
+				      (write-call "String.appendChar" 2)))))
 	   (setf token-list (rest token-list)))
 	  ((eql 'keyword (token-type (first token-list)))
 	   (nconc appendent (list (concatenate 'string "<keyword> "
@@ -502,6 +518,7 @@
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  ((eql 'identifier (token-type (first token-list)))
 	   (cond ((string= #\[ (second token-list))
+		  (print token-list)
 		  (nconc appendent
 			 (list (concatenate 'string "<identifier> "
 					    (first token-list)
@@ -509,12 +526,17 @@
 					    (write-to-string (index-of *h* (first token-list)))
 					    " </identifier>"))
 			 (list "<symbol> [ </symbol>"))
+		  (nconc appendent (list (write-push (segment *h* (first token-list))
+						     (index-of *h* (first token-list)))))
 		  (multiple-value-bind (new-rest-tokens new-appendent)
 		      (compile-expression (cddr token-list) appendent)
 		    (setf token-list new-rest-tokens)
 		    (setf appendent new-appendent))
 		  (assert (string= #\] (first token-list)))
 		  (nconc appendent (list "<symbol> ] </symbol>"))
+		  (nconc appendent (list (write-arithmetic #\+)
+					 (write-pop "pointer" 1)
+					 (write-push "that" 0)))
 		  (setf token-list (rest token-list)))
 		 ((or (string= #\( (second token-list))
 		      (string= #\. (second token-list)))
@@ -529,7 +551,7 @@
 							" </identifier>")))
 					; the following line is problematic: it may not be local
 		    (let ((seg (segment *h* (first token-list))))
-		     (nconc appendent (list (write-push seg (index-of *h* (first token-list))))))
+		      (nconc appendent (list (write-push seg (index-of *h* (first token-list))))))
 		    (setf token-list (rest token-list)))))
 	  ((member (first token-list) '("-" "~") :test 'string=)
 	   (let ((unary-op (first token-list)))
@@ -693,4 +715,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/Square" #'tokenizer t)
+(parser-writer "~/nand2tetris/projects/11/Average" #'tokenizer t)
