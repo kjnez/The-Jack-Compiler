@@ -518,7 +518,6 @@
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  ((eql 'identifier (token-type (first token-list)))
 	   (cond ((string= #\[ (second token-list))
-		  (print token-list)
 		  (nconc appendent
 			 (list (concatenate 'string "<identifier> "
 					    (first token-list)
@@ -710,4 +709,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/Square" #'tokenizer t)
+(parser-writer "~/nand2tetris/projects/11/ComplexArrays" #'tokenizer t)
