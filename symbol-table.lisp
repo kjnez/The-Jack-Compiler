@@ -79,3 +79,16 @@
 	  ((gethash name c-table)
 	   (third (gethash name c-table)))
 	  (t nil))))
+
+(defun segment (table name)
+  "Returns the segment of the name. This is used in write-push and write-pop."
+  (let ((kind (kind-of table name)))
+    (cond ((string= "var" kind)
+	   "local")
+	  ((string= "arg" kind)
+	   "argument")
+	  ((string= "field" kind)
+	   "this")
+	  ((string= "static" kind)
+	   "static")
+	  (t (error "Segment cannot be allocated.")))))

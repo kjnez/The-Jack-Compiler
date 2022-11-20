@@ -6,6 +6,7 @@
    Structure: 'class' className '{' classVarDec* subroutineDec* '}'"
   (defparameter *h* (make-tables))
   (defparameter *label-count* 0)
+  (defparameter *class-name* (second token-list))
   (let ((parsed-list (list))
 	(class-name (second token-list)))
     (if (string= "class" (first token-list))
@@ -35,7 +36,7 @@
 	     (when (string= "method" (first token-list))
 	       (define *h* "this" class-name "arg"))
 	     (multiple-value-bind (new-token-list new-parsed-list)
-		 (compile-subroutine token-list parsed-list class-name)
+		 (compile-subroutine token-list parsed-list)
 	       (setf token-list new-token-list)
 	       (setf parsed-list new-parsed-list)))
     (if (string= #\} (first token-list))
@@ -97,10 +98,11 @@
   "Check if the token is ('int' | 'char' | boolean')."
   (member token (list "int" "char" "boolean") :test 'string=))
 
-(defun compile-subroutine (token-list &optional (parsed-list '()) class-name)
+(defun compile-subroutine (token-list &optional (parsed-list '()))
   "Structure: ('constructor' | 'function' | 'method') ('void' | type) subroutineName '(' parameterList ')' subroutineBody"
   (let ((appendent (list "<subroutineDec>"))
 	(subroutine-name (third token-list))
+	(kind (first token-list))
 	(type (second token-list)))
     (nconc appendent (list (concatenate 'string "<keyword> " (first token-list) " </keyword>")))
     (if (or (string= "void" type) (is-type type))
@@ -145,8 +147,15 @@
 		 (setf rest-tokens new-rest-tokens)
 		 (setf appendent new-appendent)))
       (nconc appendent (list (write-function
-			      (concatenate 'string class-name "." subroutine-name) ;wrong here
+			      (concatenate 'string *class-name* "." subroutine-name)
 			      (var-count *h* "var"))))
+      (when (string= kind "constructor")
+	(nconc appendent (list (write-push "constant" (var-count *h* "field"))
+			       (write-call "Memory.alloc" 1)
+			       (write-pop "pointer" 0))))
+      (when (string= kind "method")
+	(nconc appendent (list (write-push "argument" 0)
+			       (write-pop "pointer" 0))))
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-statements rest-tokens appendent type)
 	(setf rest-tokens new-rest-tokens)
@@ -295,7 +304,7 @@
 	(setf rest-tokens new-token-list)
 	(setf appendent new-appendent))
       (assert (string= #\; (first rest-tokens)))
-      (let ((seg (if (string= "var" (kind-of *h* var-name)) "local" "argument")))
+      (let ((seg (segment *h* var-name)))
        (nconc appendent (list (write-pop seg (index-of *h* var-name)))))
       (values (rest rest-tokens)
 	      (append parsed-list appendent
@@ -307,6 +316,7 @@
     (multiple-value-bind (new-token-list new-appendent)
 	(compile-subroutine-call (rest token-list) appendent)
       (assert (string= #\; (first new-token-list)))
+      (nconc new-appendent (list (write-pop "temp" 0)))
       (values (rest new-token-list) (append parsed-list new-appendent
 					    (list "<symbol> ; </symbol>") (list "</doStatement>"))))))
 
@@ -389,11 +399,11 @@
     (setf appendent (append appendent (list "<symbol> } </symbol>")))
     (setf rest-tokens (rest rest-tokens))
     (nconc appendent (list (write-goto label2)))
+    (nconc appendent (list (write-label label1)))
     (when (string= "else" (first rest-tokens))
       (nconc appendent (list "<keyword> else </keyword>"))
       (assert (string= #\{ (second rest-tokens)))
       (nconc appendent (list "<symbol> { </symbol>"))
-      (nconc appendent (list (write-label label1)))
       (multiple-value-bind (new-rest-tokens new-appendent)
 	  (compile-statements (cddr rest-tokens) appendent)
 	(setf rest-tokens new-rest-tokens)
@@ -478,7 +488,7 @@
 		    (nconc appendent (list (write-push "constant" 1)
 					   (write-arithmetic "neg"))))
 		   ((string= "this" keyword-constant)
-		    (nconc appendent (list (write-push "this" 0))))
+		    (nconc appendent (list (write-push "pointer" 0))))
 		   (t (error "Keyword-constant not recognized."))))
 	   (setf token-list (rest token-list)))
 	  ((string= #\( (first token-list))
@@ -518,8 +528,8 @@
 							(write-to-string (index-of *h* (first token-list)))
 							" </identifier>")))
 					; the following line is problematic: it may not be local
-		    (let ((kind (if (string= "arg" (kind-of *h* (first token-list))) "argument" "local")))
-		     (nconc appendent (list (write-push kind (index-of *h* (first token-list))))))
+		    (let ((seg (segment *h* (first token-list))))
+		     (nconc appendent (list (write-push seg (index-of *h* (first token-list))))))
 		    (setf token-list (rest token-list)))))
 	  ((member (first token-list) '("-" "~") :test 'string=)
 	   (let ((unary-op (first token-list)))
@@ -548,6 +558,8 @@
 	(n-expressions 0))
     (assert (eql 'identifier (token-type (first rest-tokens))))
     (cond ((string= #\( (second rest-tokens))
+	   ;; 1. if this subroutine-call is inside of a constructor
+	   ;; 2. if 1 is true, what is the class name
 	   (setf appendent (list (concatenate 'string "<identifier> "
 					      (first rest-tokens)
 					      " #\# subroutine used nil"
@@ -559,7 +571,10 @@
 	     (setf appendent new-appendent)
 	     (setf n-expressions num-expressions))
 	   (assert (string= #\) (first rest-tokens)))
-	   (nconc appendent (list (write-call (first token-list) n-expressions)))
+	   (nconc appendent
+		  (list (write-push "pointer" 0))
+		  (list (write-call (concatenate 'string *class-name* "." (first token-list))
+				    (1+ n-expressions))))
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  ((string= #\. (second rest-tokens))
 	   (if (string= "var" (kind-of *h* (first rest-tokens)))
@@ -588,12 +603,21 @@
 	     (setf appendent new-appendent)
 	     (setf n-expressions num-expressions))
 	   (assert (string= #\) (first rest-tokens)))
-	   (nconc appendent (list (write-call
-				   (concatenate 'string
-						(first token-list)
-						"."
-						(third token-list))
-				   n-expressions)))
+	   (let* ((class-name (or (type-of* *h* (first token-list))
+				  (first token-list)))
+		  (class-name? (string= class-name (first token-list)))
+		  (n-expressions (if class-name?
+				     n-expressions
+				     (1+ n-expressions))))
+	     (unless class-name?
+	       (nconc appendent (list (write-push (segment *h* (first token-list))
+						  (index-of *h* (first token-list))))))
+	     (nconc appendent (list (write-call
+				     (concatenate 'string
+						  class-name
+						  "."
+						  (third token-list))
+				     n-expressions))))
 	   (nconc appendent (list "<symbol> ) </symbol>")))
 	  (t (error "Something is wrong with the subroutine calling.")))
     (values (cdr rest-tokens) (append parsed-list appendent))))
@@ -629,7 +653,7 @@
 
 (defun parser-writer (dir &optional (tokenizer #'tokenizer) (vm-only nil))
   (let* ((jack-files (directory (concatenate 'string dir "/*.jack")))
-	 (output-folder (concatenate 'string dir "/parsed/")))
+	 (output-folder (concatenate 'string dir "/")))
     (dolist (jack-file jack-files)
       (if vm-only
 	  (let ((vm-file (concatenate 'string output-folder (pathname-name jack-file) ".vm")))
@@ -669,4 +693,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/ConvertToBin/" #'tokenizer t)
+(parser-writer "~/nand2tetris/projects/11/Square" #'tokenizer t)
