@@ -667,7 +667,7 @@
 	 (format stream (concatenate 'string line "~%")))
        (format stream (concatenate 'string line "~%"))))))
 
-(defun parser-writer (dir &optional (tokenizer #'tokenizer) (vm-only nil))
+(defun parser-writer (dir &optional (vm-only t) (tokenizer #'tokenizer))
   (let* ((jack-files (directory (concatenate 'string dir "/*.jack")))
 	 (output-folder (concatenate 'string dir "/")))
     (dolist (jack-file jack-files)
@@ -709,4 +709,4 @@
   (compile-do '("do" "func" "(" "expr" ")" "." "expr2" "(" ")" ";")))
 
 
-(parser-writer "~/nand2tetris/projects/11/ComplexArrays" #'tokenizer t)
+(parser-writer "~/nand2tetris/projects/11/ComplexArrays" t #'tokenizer)
